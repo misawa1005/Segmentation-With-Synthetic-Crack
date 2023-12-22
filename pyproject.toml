@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "CrackSegmentation"
+version = "0.1.0"
+description = ""
+authors = ["misawa1005 <58515769+misawa1005@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+segmentation-models-pytorch = "^0.3.3"
+pytorch-lightning = "1.5.4"
+matplotlib = "^3.8.2"
+opencv-python = "^4.8.1.78"
+segment-anything = "^1.0"
+pycocotools = "^2.0.7"
+onnxruntime = "^1.16.3"
+onnx = "^1.15.0"
+ipykernel = "^6.27.1"
+torch = "^2.1.2"
+isort = "^5.13.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
