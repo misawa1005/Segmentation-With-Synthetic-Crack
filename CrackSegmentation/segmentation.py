@@ -1,13 +1,17 @@
-import torch
 import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
+import torch
 
 
 class CrackModel(pl.LightningModule):
     def __init__(self, arch, encoder_name, in_channels, out_classes, **kwargs):
         super().__init__()
         self.model = smp.create_model(
-            arch, encoder_name=encoder_name, in_channels=in_channels, classes=out_classes, **kwargs
+            arch,
+            encoder_name=encoder_name,
+            in_channels=in_channels,
+            classes=out_classes,
+            **kwargs,
         )
 
         params = smp.encoders.get_preprocessing_params(encoder_name)
@@ -22,7 +26,6 @@ class CrackModel(pl.LightningModule):
         return mask
 
     def shared_step(self, batch, stage):
-        
         image = batch["image"]
 
         assert image.ndim == 4
@@ -37,13 +40,15 @@ class CrackModel(pl.LightningModule):
         assert mask.max() <= 1.0 and mask.min() >= 0
 
         logits_mask = self.forward(image)
-        
+
         loss = self.loss_fn(logits_mask, mask)
 
         prob_mask = logits_mask.sigmoid()
         pred_mask = (prob_mask > 0.5).float()
 
-        tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), mask.long(), mode="binary")
+        tp, fp, fn, tn = smp.metrics.get_stats(
+            pred_mask.long(), mask.long(), mode="binary"
+        )
 
         return {
             "loss": loss,
@@ -59,18 +64,20 @@ class CrackModel(pl.LightningModule):
         fn = torch.cat([x["fn"] for x in outputs])
         tn = torch.cat([x["tn"] for x in outputs])
 
-        per_image_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro-imagewise")
+        per_image_iou = smp.metrics.iou_score(
+            tp, fp, fn, tn, reduction="micro-imagewise"
+        )
         dataset_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
 
         metrics = {
             f"{stage}_per_image_iou": per_image_iou,
             f"{stage}_dataset_iou": dataset_iou,
         }
-        
+
         self.log_dict(metrics, prog_bar=True)
 
     def training_step(self, batch, batch_idx):
-        return self.shared_step(batch, "train")            
+        return self.shared_step(batch, "train")
 
     def training_epoch_end(self, outputs):
         return self.shared_epoch_end(outputs, "train")
@@ -82,7 +89,7 @@ class CrackModel(pl.LightningModule):
         return self.shared_epoch_end(outputs, "valid")
 
     def test_step(self, batch, batch_idx):
-        return self.shared_step(batch, "test")  
+        return self.shared_step(batch, "test")
 
     def test_epoch_end(self, outputs):
         return self.shared_epoch_end(outputs, "test")
