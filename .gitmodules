@@ -1,0 +1,3 @@
+[submodule "GroundedSAM/GroundingDINO"]
+	path = GroundedSAM/GroundingDINO
+	url = git@github.com:IDEA-Research/GroundingDINO.git
