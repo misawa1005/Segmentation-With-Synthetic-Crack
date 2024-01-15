@@ -10,6 +10,7 @@ from dataloader import CustomSegmentationDataset
 from segmentation import CrackModel
 from torch.utils.data import DataLoader
 from torchvision import transforms
+import matplotlib.pyplot as plt
 
 
 @dataclass
@@ -45,6 +46,8 @@ def calculate_metrics(y_pred: np.ndarray, y_true: np.ndarray) -> Metrics:
     Returns:
         metrics (Metrics): 各種指標
     """
+    y_pred = np.where(y_pred > 0, 1, 0)
+    y_true = np.where(y_true > 0, 1, 0)
     y_pred_flat = y_pred.flatten()
     y_true_flat = y_true.flatten()
 
@@ -77,6 +80,7 @@ def inference(
     data_dir: Path,
     batch_size: int,
     output_dir: Path = Path("results"),
+    mode: str = "infer",
 ):
     """
     推論を行う関数
@@ -105,7 +109,7 @@ def inference(
     )
 
     test_dataset = CustomSegmentationDataset(
-        data_dir=str(data_dir), mode="infer", transform=transform
+        data_dir=str(data_dir), mode=mode, transform=transform
     )
     n_cpu = os.cpu_count()
     test_dataloader = DataLoader(
@@ -114,37 +118,71 @@ def inference(
 
     model.eval()
     image_idx = 0
-    scores = []
-    with torch.no_grad():
-        for batch in test_dataloader:
-            logits = model(batch)
-            pr_masks = logits.sigmoid()
+    if test_dataset.mode == "infer":
+        with torch.no_grad():
+            for batch in test_dataloader:
+                logits = model(batch)
+                pr_masks = logits.sigmoid()
 
-            for i, (mask, pr_mask, img_name) in enumerate(
-                zip(
-                    test_dataset.masks[image_idx:],
-                    pr_masks,
-                    test_dataset.imgs[image_idx:],
-                )
-            ):
-                mask_normalized = cv2.normalize(
-                    pr_mask.numpy().squeeze(), None, 0, 255, cv2.NORM_MINMAX
-                )
-                mask_uint8 = mask_normalized.astype(np.uint8)
-                scores.append(
-                    calculate_metrics(
-                        mask_uint8, mask.numpy().squeeze().astype(np.uint8)
+                for i, (pr_mask, img_name) in enumerate(
+                    zip(
+                        pr_masks,
+                        test_dataset.imgs[image_idx:],
                     )
-                )
+                ):
+                    mask_normalized = cv2.normalize(
+                        pr_mask.numpy().squeeze(), None, 0, 255, cv2.NORM_MINMAX
+                    )
+                    mask_uint8 = mask_normalized.astype(np.uint8)
+                    cv2.imwrite(f'{str(output_dir)}/{img_name.split(".")[0]}.png', mask_uint8)
+                image_idx += len(batch)
+    else:
+        scores = []
+        with torch.no_grad():
+            for batch in test_dataloader:
+                logits = model(batch["image"])
+                pr_masks = logits.sigmoid()
 
-                cv2.imwrite(f'{str(output_dir)/img_name.split(".")[0]}.png', mask_uint8)
-            image_idx += len(batch)
+                for i, (gr_mask, pr_mask, image) in enumerate(
+                    zip(
+                        batch["mask"],
+                        pr_masks,
+                        batch["image"],
+                    )
+                ):
+                    mask_normalized = cv2.normalize(
+                        pr_mask.numpy().squeeze(), None, 0, 255, cv2.NORM_MINMAX
+                    )
+                    mask_uint8 = mask_normalized.astype(np.uint8)
+                    scores.append(
+                        calculate_metrics(
+                            mask_uint8, gr_mask.numpy().squeeze().astype(np.uint8)
+                        )
+                    )
+                    if (i+image_idx)%30 == 0:
+                        plt.figure(figsize=(10, 5))
+                        plt.subplot(1, 3, 1)
+                        plt.imshow(image.numpy().transpose(1, 2, 0))
+                        plt.title("Image")
+                        plt.axis("off")
 
-    print(f"Accuracy: {np.mean([score.accuracy for score in scores])}")
-    print(f"Precision: {np.mean([score.precision for score in scores])}")
-    print(f"Recall: {np.mean([score.recall for score in scores])}")
-    print(f"F1 score: {np.mean([score.f1_score for score in scores])}")
-    print(f"mIoU: {np.mean([score.iou for score in scores])}")
+                        plt.subplot(1, 3, 2)
+                        plt.imshow(gr_mask.numpy().squeeze())
+                        plt.title("Ground truth")
+                        plt.axis("off")
+
+                        plt.subplot(1, 3, 3)
+                        plt.imshow(mask_uint8)
+                        plt.title("Prediction")
+                        plt.axis("off")
+                        plt.savefig(f"{str(output_dir)}/inference_{i+image_idx}.png")
+                        plt.close()
+                image_idx += len(batch)
+        print(f"Accuracy: {np.mean([score.accuracy for score in scores])}")
+        print(f"Precision: {np.mean([score.precision for score in scores])}")
+        print(f"Recall: {np.mean([score.recall for score in scores])}")
+        print(f"F1 score: {np.mean([score.f1_score for score in scores])}")
+        print(f"mIoU: {np.mean([score.iou for score in scores])}")
 
 
 if __name__ == "__main__":
@@ -153,6 +191,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, required=True)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--output_dir", type=str, default="results")
+    parser.add_argument("--mode", type=str, default="infer")
     args = parser.parse_args()
 
     inference(
@@ -160,4 +199,5 @@ if __name__ == "__main__":
         Path(args.data_dir),
         args.batch_size,
         Path(args.output_dir),
+        args.mode,
     )
